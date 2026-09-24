@@ -1,0 +1,12 @@
+# conda env create -f environment.yml && conda activate bert-norm-analysis
+# PyTorch comes from pip (the pytorch conda channel is no longer updated). The
+# default Linux wheel ships with CUDA; if it does not match your driver,
+# reinstall torch following https://pytorch.org/get-started/locally/
+name: bert-norm-analysis
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -r requirements.txt

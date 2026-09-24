@@ -1,0 +1,20 @@
+# Python 3 requirements for the norm-based analysis
+# (extract_norms.py, analysis_utils.py, Norm_*.ipynb, tests).
+# Tested with Python 3.11, torch 2.14, transformers 4.46.3 and 5.17.0.
+# Install torch first for your CUDA version if pip's default wheel does not
+# match your driver: https://pytorch.org/get-started/locally/
+torch>=2.1
+transformers>=4.46,<6
+huggingface_hub
+safetensors
+numpy
+scipy
+scikit-learn
+matplotlib
+seaborn
+six
+jupyterlab
+ipykernel
+nbformat
+nbconvert
+pytest
