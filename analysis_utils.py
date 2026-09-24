@@ -28,7 +28,7 @@ def get_maps(example, key, normalize=False):
 def token_stats(data, key="attns", normalize=False):
   """Average attention (or norm) to particular tokens/positions (Section 3.1,
   3.2). With key="norms" and normalize=False this is the average summed
-  ||alpha f(x)|| given to e.g. [SEP], as in Figure 4 of Kobayashi et al.; with
+  ||alpha f(x)|| given to e.g. [SEP], as analysed in Section 4 of Kobayashi et al.; with
   normalize=True the rows are first rescaled to sum to one, giving the share of
   the norm going to each token type, which is on the same scale as attention.
   """

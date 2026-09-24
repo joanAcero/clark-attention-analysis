@@ -176,3 +176,13 @@ def test_matches_kobayashi_implementation():
       np.testing.assert_allclose(maps[b]["summed_norms"][l],
                                  summed_afx_norm[b, :n, :n].numpy(),
                                  rtol=1e-4, atol=1e-6)
+
+
+def test_load_pretrained_returns_attentions(tmp_path):
+  torch.manual_seed(0)
+  BertModel(BertConfig(**CONFIG)).save_pretrained(str(tmp_path))
+  model = extract_norms.load_model(str(tmp_path))
+  assert model.config._attn_implementation == "eager"
+  maps = _extract(model, [[1, 5, 6, 2]])[0]
+  assert maps["attns"].shape == (3, 12, 4, 4)
+  np.testing.assert_allclose(maps["attns"].sum(-1), 1.0, rtol=1e-5)

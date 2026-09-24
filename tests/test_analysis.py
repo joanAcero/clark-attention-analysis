@@ -92,3 +92,13 @@ def test_token_stats_rows():
   assert np.all(total <= 1.0 + 1e-3)
   norm_stats = au.token_stats(data, "norms", normalize=True)
   np.testing.assert_allclose(norm_stats["sep"], stats["sep"], atol=1e-2)
+
+
+def test_head_distances_torch_matches_numpy():
+  import head_distances
+  rng = np.random.RandomState(0)
+  maps = rng.rand(20, 7, 7)
+  maps /= maps.sum(-1, keepdims=True)
+  np.testing.assert_allclose(head_distances.js_torch(maps, "cpu", chunk_size=6),
+                             head_distances.js_numpy(maps), rtol=1e-4,
+                             atol=1e-5)

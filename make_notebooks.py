@@ -94,7 +94,7 @@ def add_line(stats, key, ax, color, label, plot_avgs=True):
   ax.set_xlabel("Layer")
 
 
-# Figure 2 of Clark et al., one column per map
+# Figure 2 of Clark et al. (average attention per head), one column per map
 fig, axes = plt.subplots(3, len(MAPS), figsize=(5 * len(MAPS), 10))
 for col, (name, _, _) in enumerate(MAPS):
   stats = avg_stats[name]
@@ -113,7 +113,7 @@ for col, (name, _, _) in enumerate(MAPS):
     axes[row, col].set_ylabel("Avg. " + name)
 plt.tight_layout()
 plt.show()""",
-    """md:### $\\|f(x)\\|$ by token type (Figure 5 of Kobayashi et al.)
+    """md:### $\\|f(x)\\|$ by token type (Kobayashi et al., Section 4)
 Kobayashi et al.'s explanation of the [SEP] result: the heads that put large
 $\\alpha$ on [SEP] have small $\\|f(\\text{[SEP]})\\|$. Requires `fx_norms`
 (`--outputs attns,norms,fx_norms`).""",

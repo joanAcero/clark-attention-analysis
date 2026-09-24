@@ -76,7 +76,8 @@ def load_model(bert_dir, random_init=False, debug=False, seed=0):
     torch.manual_seed(seed)
     model = BertModel(config)
   else:
-    model = BertModel.from_pretrained(bert_dir, config=config)
+    model = BertModel.from_pretrained(bert_dir, config=config,
+                                      attn_implementation="eager")
   model.eval()
   return model
 
