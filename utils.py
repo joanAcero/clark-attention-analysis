@@ -3,32 +3,41 @@ from __future__ import division
 from __future__ import print_function
 
 import json
+import os
 import pickle
 import time
 
-import tensorflow as tf
+
+def _make_parent_dirs(path):
+  parent = os.path.dirname(path)
+  if parent:
+    os.makedirs(parent, exist_ok=True)
 
 
 def load_json(path):
-  with tf.gfile.GFile(path, 'r') as f:
+  with open(path, 'r') as f:
     return json.load(f)
 
 
 def write_json(o, path):
-  tf.gfile.MakeDirs(path.rsplit('/', 1)[0])
-  with tf.gfile.GFile(path, 'w') as f:
+  _make_parent_dirs(path)
+  with open(path, 'w') as f:
     json.dump(o, f)
 
 
 def load_pickle(path):
-  with tf.gfile.GFile(path, 'rb') as f:
-    return pickle.load(f)
+  with open(path, 'rb') as f:
+    try:
+      return pickle.load(f)
+    except UnicodeDecodeError:
+      # pickles written by Python 2 (e.g. the data released with the paper)
+      f.seek(0)
+      return pickle.load(f, encoding='latin1')
 
 
 def write_pickle(o, path):
-  if '/' in path:
-    tf.gfile.MakeDirs(path.rsplit('/', 1)[0])
-  with tf.gfile.GFile(path, 'wb') as f:
+  _make_parent_dirs(path)
+  with open(path, 'wb') as f:
     pickle.dump(o, f, -1)
 
 
