@@ -526,10 +526,224 @@ else:
 ]
 
 
+RG1 = [
+    """md:# RG1: What does the attention-only parent probe use?
+
+Clark et al.'s attention-only probe (61 UAS) combines the 144 heads linearly, but its
+weights were never analysed, and it has not been compared with controls that
+differ in only one respect. This notebook trains the **parent probe** of the
+proposal on BERT-base attention (UD English EWT train; evaluated on EWT dev and PUD):
+
+$p(j \\mid i) \\propto \\exp g(\\phi_{ij})$, $\\phi_{ij} = [\\alpha^k_{ij}, \\alpha^k_{ji}]_{k=1..144}$;
+$p(\\text{ROOT} \\mid i) \\propto \\exp g_r(\\sigma_i)$, $\\sigma_i = [\\alpha^k_{i,\\text{CLS}}, \\alpha^k_{i,\\text{SEP}}]_k$,
+
+with $g$ linear or a one-hidden-layer MLP, independent decisions per token
+(no tree constraint), standardized features (weights = effect of one SD).
+
+| Question | Analysis |
+| --- | --- |
+| Q1. How much of the probe's accuracy is due to BERT vs. the probe? | same probes on a randomly initialized BERT, and on positional features with the same number of parameters |
+| Q2. Weighted vote over heads, or interactions? | linear vs. MLP, relative to the same gap on the controls |
+| Q3. Which heads and layers drive the parent decision? | standardized weights (stability over seeds), head/layer ablation, single-layer probes |
+| Q4. Does the combination change with the relation? | relation-conditioned linear probe (one weight vector per relation), similarity of the weight vectors |
+
+`ATTN_DATA_DIR` must contain `ewt/{train,dev,train_random,dev_random}_norms.pkl`
+and `pud/{dev,dev_random}_norms.pkl` (from `slurm/02_extract_syntax.sh`).""",
+    """import collections
+import os
+
+import numpy as np
+import torch
+from matplotlib import pyplot as plt
+from scipy.cluster import hierarchy
+
+import probes
+import syntax_extended as se
+import utils
+
+DATA = os.environ.get("ATTN_DATA_DIR", "./data")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+SEEDS = [0, 1, 2, 3, 4]
+REL_MIN_COUNT = int(os.environ.get("REL_MIN_COUNT", 200))  # relation-conditioned probe
+L, H = 12, 12
+# heads found by the per-head analysis (0-indexed layer, head)
+KNOWN_HEADS = {(7, 10): "det/case", (7, 9): "obj", (6, 5): "poss", (3, 9): "aux:pass",
+               (5, 3): "obl", (7, 1): "nsubj", (6, 0): "conj"}
+
+load = lambda *p: utils.load_pickle(os.path.join(DATA, *p))
+train_all = load("ewt", "train_norms.pkl")
+n_val = len(train_all) // 10  # fixed validation split for early stopping
+train, val = train_all[:-n_val], train_all[-n_val:]
+dev, pud = load("ewt", "dev_norms.pkl"), load("pud", "dev_norms.pkl")
+rtrain_all = load("ewt", "train_random_norms.pkl")
+rtrain, rval = rtrain_all[:-n_val], rtrain_all[-n_val:]
+rdev, rpud = load("ewt", "dev_random_norms.pkl"), load("pud", "dev_random_norms.pkl")
+print(len(train), "train,", len(val), "val,", len(dev), "EWT dev,", len(pud), "PUD;", DEVICE)
+
+
+def feature_name(f, root=False):
+  d, k = divmod(f, L * H)
+  l, h = divmod(k, H)
+  kind = ("->[CLS]", "->[SEP]")[d] if root else ("d->h", "h<-d")[d]
+  tag = KNOWN_HEADS.get((l, h), "")
+  return "{:7s} {:2d}-{:2d} {}".format(kind, l, h, tag)""",
+    """md:## Q1–Q2. Probes and controls""",
+    """CONFIGS = {  # name: (train, val, dev, pud, feature_type)
+    "BERT attention": (train, val, dev, pud, "attention"),
+    "random-init attention": (rtrain, rval, rdev, rpud, "attention"),
+    "position (matched)": (train, val, dev, pud, "position"),
+}
+results = collections.defaultdict(list)
+linear_probes, mlp_probes = [], []
+batchers = {}
+for name, (tr, va, de, pu, ft) in CONFIGS.items():
+  tb = probes.make_batcher(tr, feature_type=ft)
+  vb = probes.make_batcher(va, feature_type=ft, standardizer_data=tr)
+  db = probes.make_batcher(de, feature_type=ft, standardizer_data=tr)
+  pb = probes.make_batcher(pu, feature_type=ft, standardizer_data=tr)
+  batchers[name] = (tb, vb, db, pb)
+  for kind in ["linear", "mlp"]:
+    for seed in SEEDS:
+      probe = probes.train_probe(tb, vb, kind, seed=seed, device=DEVICE, verbose=False)
+      ewt_res = probes.evaluate(probe, db, DEVICE)
+      pud_res = probes.evaluate(probe, pb, DEVICE)
+      results[(name, kind)].append((ewt_res["UAS"], ewt_res["root"], pud_res["UAS"]))
+      if name == "BERT attention":
+        (linear_probes if kind == "linear" else mlp_probes).append(probe)
+    r = np.array(results[(name, kind)]) * 100
+    print("{:24s} {:6s}  EWT UAS {:.1f} ± {:.1f}  root {:.1f}  PUD UAS {:.1f} ± {:.1f}".format(
+        name, kind, r[:, 0].mean(), r[:, 0].std(), r[:, 1].mean(), r[:, 2].mean(), r[:, 2].std()))""",
+    """md:**Reading.** Q1: the margin of *BERT attention* over *random-init attention* and
+*position* is what BERT's attention adds beyond architecture and word order.
+Q2: if MLP − linear is large for BERT attention but small for the controls,
+the parent decision needs interactions between heads; if it is similar, the
+extra capacity is exploited independently of what BERT encodes.""",
+    """gap = {name: np.mean([m[0] for m in results[(name, "mlp")]]) -
+                np.mean([l[0] for l in results[(name, "linear")]]) for name in CONFIGS}
+print({k: round(100 * v, 1) for k, v in gap.items()})""",
+    """md:## Q3. Which heads drive the linear probe?
+Standardized weights, averaged over seeds. Left: dependent attends to
+candidate (d->h); middle: candidate attends to dependent (h<-d); right: ROOT
+features (attention of the dependent to [CLS] / [SEP]).""",
+    """pair_w = np.array([p.weights()[0] for p in linear_probes])
+root_w = np.array([p.weights()[1] for p in linear_probes])
+print("seed stability (mean pairwise corr, top-10 Jaccard): pair {} root {}".format(
+    np.round(probes.seed_stability(pair_w), 2), np.round(probes.seed_stability(root_w), 2)))
+
+mean_pair, mean_root = pair_w.mean(0), root_w.mean(0)
+fig, axes = plt.subplots(1, 4, figsize=(18, 4))
+grids = [probes.weight_grid(mean_pair, L, H)[0], probes.weight_grid(mean_pair, L, H)[1],
+         probes.weight_grid(mean_root, L, H)[0], probes.weight_grid(mean_root, L, H)[1]]
+for ax, g, title in zip(axes, grids, ["d->h", "h<-d", "root: ->[CLS]", "root: ->[SEP]"]):
+  lim = np.abs(g).max()
+  im = ax.imshow(g, cmap="RdBu", vmin=-lim, vmax=lim)
+  ax.set_title(title); ax.set_xlabel("head"); ax.set_ylabel("layer")
+  plt.colorbar(im, ax=ax, fraction=0.046)
+plt.tight_layout(); plt.show()
+
+print("top pair weights (mean ± sd over seeds):")
+for f in np.argsort(-np.abs(mean_pair))[:15]:
+  print("  {:+.2f} ± {:.2f}  {}".format(mean_pair[f], pair_w[:, f].std(), feature_name(f)))
+print("top root weights:")
+for f in np.argsort(-np.abs(mean_root))[:8]:
+  print("  {:+.2f} ± {:.2f}  {}".format(mean_root[f], root_w[:, f].std(), feature_name(f, True)))
+
+plt.figure(figsize=(5, 3))
+w = np.abs(probes.weight_grid(mean_pair, L, H)).sum(-1)
+plt.plot(range(L), w[0], "o-", label="d->h"); plt.plot(range(L), w[1], "o-", label="h<-d")
+plt.xlabel("layer"); plt.ylabel("sum |weight|"); plt.legend(); plt.show()""",
+    """md:**Ablation.** Weights of correlated features are not importances, so we also
+set each head's features (all four) to their training mean and measure the UAS
+drop on EWT dev (seed-0 probes); and the same per layer.""",
+    """_, db, _ = batchers["BERT attention"][1:]
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+for ax, (name, probe) in zip(axes, [("linear", linear_probes[0]), ("mlp", mlp_probes[0])]):
+  base, drops = probes.head_ablation(probe, db, L, H, DEVICE)
+  im = ax.imshow(100 * drops, cmap="Reds")
+  ax.set_title("{} (UAS {:.1f}): UAS drop per head".format(name, 100 * base))
+  ax.set_xlabel("head"); ax.set_ylabel("layer"); plt.colorbar(im, ax=ax, fraction=0.046)
+  top = np.argsort(-drops.ravel())[:8]
+  print(name, "largest drops:", ["{}-{} {:.1f}{}".format(k // H, k % H, 100 * drops.ravel()[k],
+        " (" + KNOWN_HEADS[(k // H, k % H)] + ")" if (k // H, k % H) in KNOWN_HEADS else "")
+        for k in top])
+  _, ldrops = probes.layer_ablation(probe, db, L, H, DEVICE)
+  print(name, "layer ablation drops:", np.round(100 * ldrops, 1))
+plt.tight_layout(); plt.show()""",
+    """md:**Single-layer and cumulative probes** (the attention-space analogue of
+Tenney et al.): a linear probe using only the heads of layer *l* (24 pair + 24
+root features), and one using layers 0..*l*.""",
+    """single, cumulative = np.zeros((L, 3)), np.zeros(L)
+for l in range(L):
+  for s, seed in enumerate([0, 1, 2]):
+    tb = probes.make_batcher(train, layers=[l]); vb = probes.make_batcher(val, layers=[l], standardizer_data=train)
+    db_l = probes.make_batcher(dev, layers=[l], standardizer_data=train)
+    single[l, s] = probes.evaluate(probes.train_probe(tb, vb, "linear", seed=seed, device=DEVICE,
+                                                      verbose=False), db_l, DEVICE)["UAS"]
+  layers = list(range(l + 1))
+  tb = probes.make_batcher(train, layers=layers); vb = probes.make_batcher(val, layers=layers, standardizer_data=train)
+  db_l = probes.make_batcher(dev, layers=layers, standardizer_data=train)
+  cumulative[l] = probes.evaluate(probes.train_probe(tb, vb, "linear", seed=0, device=DEVICE,
+                                                     verbose=False), db_l, DEVICE)["UAS"]
+  print("layer {:2d}: single {:.1f} ± {:.1f}   cumulative {:.1f}".format(
+      l, 100 * single[l].mean(), 100 * single[l].std(), 100 * cumulative[l]))
+plt.figure(figsize=(5, 3))
+plt.errorbar(range(L), 100 * single.mean(1), 100 * single.std(1), fmt="o-", label="single layer")
+plt.plot(range(L), 100 * cumulative, "s-", label="layers 0..l")
+plt.xlabel("layer"); plt.ylabel("EWT dev UAS"); plt.legend(); plt.show()""",
+    """md:## Q4. Relation-conditioned probe
+One linear weight vector per relation of the dependent (relations with ≥ 200
+training tokens; the rest, and `root`, share one vector). The **gold relation is
+given**, so accuracies are an upper bound for "knowing which relation to look
+for", not a parser; the relation also leaks information the unconditioned probe
+does not have (e.g. the typical direction of the head), so compare per-relation
+accuracies and weights, not the overall UAS. We compare per-relation accuracy with the unconditioned probe and the
+similarity of the weight vectors across relations.""",
+    """rels = probes.relation_vocab(train, min_count=REL_MIN_COUNT)
+tb = probes.make_batcher(train, relations=rels)
+vb = probes.make_batcher(val, relations=rels, standardizer_data=train)
+db_r = probes.make_batcher(dev, relations=rels, standardizer_data=train)
+rel_probes = [probes.train_probe(tb, vb, "relation", seed=s, device=DEVICE, verbose=False,
+                                 n_relations=len(rels)) for s in [0, 1, 2]]
+print("relation-conditioned UAS:", [round(100 * probes.evaluate(p, db_r, DEVICE)["UAS"], 1)
+                                    for p in rel_probes])
+acc_rel = probes.per_relation_accuracy(rel_probes[0], db_r, dev, DEVICE)
+acc_lin = probes.per_relation_accuracy(linear_probes[0], batchers["BERT attention"][2], dev, DEVICE)
+head_acc, _ = se.head_accuracies(dev, "attns")
+counts = collections.Counter(r for e in dev for r in e["relns"])
+print("{:12s} {:>6s} {:>8s} {:>10s} {:>10s}".format("reln", "n", "linear", "rel-cond", "best head"))
+for r in [r for r in rels if r not in ("<other>", "root")]:
+  if counts[r]:
+    print("{:12s} {:6d} {:8.1f} {:10.1f} {:10.1f}".format(
+        r[:12], counts[r], 100 * acc_lin.get(r, 0), 100 * acc_rel.get(r, 0), 100 * head_acc[r].max()))""",
+    """W = np.mean([p.weights()[0] for p in rel_probes], 0)  # [R, 288]
+names = [r for r in rels]
+keep = [i for i, r in enumerate(names) if r not in ("<other>",)]
+assert len(keep) >= 2, "need at least two relations with >= REL_MIN_COUNT tokens"
+Wk = W[keep] / np.linalg.norm(W[keep], axis=1, keepdims=True)
+sim = Wk @ Wk.T
+order = hierarchy.leaves_list(hierarchy.linkage(Wk, "average", metric="cosine"))
+fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+im = axes[0].imshow(sim[np.ix_(order, order)], cmap="RdBu", vmin=-1, vmax=1)
+lab = [names[keep[i]] for i in order]
+axes[0].set_xticks(range(len(lab))); axes[0].set_xticklabels(lab, rotation=90)
+axes[0].set_yticks(range(len(lab))); axes[0].set_yticklabels(lab)
+axes[0].set_title("cosine similarity of relation weight vectors"); plt.colorbar(im, ax=axes[0])
+hierarchy.dendrogram(hierarchy.linkage(Wk, "average", metric="cosine"),
+                     labels=[names[i] for i in keep], ax=axes[1], orientation="right")
+plt.tight_layout(); plt.show()
+print("seed stability of relation weights (corr, top-10 Jaccard):",
+      np.round(probes.seed_stability([p.weights()[0].ravel() for p in rel_probes]), 2))
+for i in keep[:15]:
+  top = np.argsort(-W[i])[:3]
+  print("{:12s} top heads: {}".format(names[i][:12], " | ".join(feature_name(f) for f in top)))""",
+]
+
+
 def main():
   nbformat.write(notebook(GENERAL), "Norm_General_Analysis.ipynb")
   nbformat.write(notebook(SYNTAX), "Norm_Syntax_Analysis.ipynb")
   nbformat.write(notebook(EXTENDED), "Norm_Syntax_Extended.ipynb")
+  nbformat.write(notebook(RG1), "RG1_Probe_Analysis.ipynb")
 
 
 if __name__ == "__main__":
