@@ -126,9 +126,13 @@ def test_padding_does_not_change_maps():
 
 
 KOBAYASHI_SCRIPT = r"""
-import sys, torch
+import os, sys, torch
 sys.path.insert(0, sys.argv[1])
+import transformers
 from transformers import BertConfig, BertModel
+# fail loudly if the installed transformers was imported instead of the fork
+assert os.path.realpath(transformers.__file__).startswith(
+    os.path.realpath(sys.argv[1])), "imported " + transformers.__file__
 torch.manual_seed(0)
 model = BertModel(BertConfig(**{config})).eval()
 ids = torch.tensor({ids})
@@ -145,6 +149,10 @@ torch.save({{"state_dict": model.state_dict(),
 @pytest.mark.skipif("KOBAYASHI_SRC" not in os.environ,
                     reason="set KOBAYASHI_SRC to compare with Kobayashi et al.")
 def test_matches_kobayashi_implementation():
+  src = os.environ["KOBAYASHI_SRC"]
+  assert os.path.isfile(os.path.join(src, "transformers", "modeling_bert.py")), (
+      "KOBAYASHI_SRC must be the directory containing Kobayashi et al.'s "
+      "'transformers' package (.../emnlp2020/transformers/src); got " + src)
   ids = [[1, 5, 6, 7, 8, 9, 2, 0, 0], [1, 10, 11, 12, 13, 14, 15, 16, 2]]
   mask = [[1] * 7 + [0] * 2, [1] * 9]
   with tempfile.TemporaryDirectory() as tmp:
