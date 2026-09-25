@@ -106,7 +106,7 @@ python head_distances.py --attn-data-file $ATTN_DATA_DIR/unlabeled_attn.pkl --ou
 ## Norm-Based Analysis (Kobayashi et al., 2020)
 
 **Step-by-step instructions to reproduce the paper and run the norm-based experiments: [REPRODUCE.md](REPRODUCE.md).**
-**Results and conclusions of the norm-based analysis: [RESULTS_RG2.md](RESULTS_RG2.md).** RG1 (analysis of the attention probe): `RG1_Probe_Analysis.ipynb`, `probes.py`.
+**Summary of what was done and the conclusions (norm-based analysis and attention-probe analysis): [RESULTS.md](RESULTS.md).**
 Environment: `conda env create -f environment.yml` (or `pip install -r requirements.txt`).
 
 This fork adds a PyTorch pipeline that reproduces the analyses above with the
