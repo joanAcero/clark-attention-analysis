@@ -1,6 +1,7 @@
 #!/bin/bash
 # Experiments B and C: word-level attention + norms on UD EWT (train/dev) and PUD,
-# plus the random-initialization control.
+# plus the random-initialization control. Files that already exist are skipped,
+# so rerunning only extracts what is missing (delete a file to redo it).
 #SBATCH --job-name=extract_syntax
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -12,14 +13,21 @@
 set -euo pipefail
 source "$SLURM_SUBMIT_DIR/slurm/config.sh"
 
+extract() {  # extract <input json> <output pkl> [extra args]
+  local in=$1 out=$2; shift 2
+  if [ -f $out ]; then echo "exists, skipping: $out"; return; fi
+  python extract_norms.py --preprocessed-data-file $in --bert-dir $BERT --word_level \
+      --outfile $out "$@"
+}
+
 for split in train dev; do
-  python extract_norms.py --preprocessed-data-file $DATA/ewt/$split.json --bert-dir $BERT --word_level
+  extract $DATA/ewt/$split.json $DATA/ewt/${split}_norms.pkl
+  # control: same architecture with random weights
+  extract $DATA/ewt/$split.json $DATA/ewt/${split}_random_norms.pkl --random_init --seed 0
 done
-python extract_norms.py --preprocessed-data-file $DATA/ewt/dev.json --bert-dir $BERT --word_level \
-    --random_init --seed 0 --outfile $DATA/ewt/dev_random_norms.pkl
 
 # PUD (test only): evaluated as "dev", probes trained on EWT train
-python extract_norms.py --preprocessed-data-file $DATA/pud/dev.json --bert-dir $BERT --word_level
-python extract_norms.py --preprocessed-data-file $DATA/pud/dev.json --bert-dir $BERT --word_level \
-    --random_init --seed 0 --outfile $DATA/pud/dev_random_norms.pkl
+extract $DATA/pud/dev.json $DATA/pud/dev_norms.pkl
+extract $DATA/pud/dev.json $DATA/pud/dev_random_norms.pkl --random_init --seed 0
 ln -sfn $DATA/ewt/train_norms.pkl $DATA/pud/train_norms.pkl
+ln -sfn $DATA/ewt/train_random_norms.pkl $DATA/pud/train_random_norms.pkl

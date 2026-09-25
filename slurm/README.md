@@ -10,7 +10,7 @@ project with `-A` (list your projects with `Sproject`).
 | 1 | `sbatch -A <project> slurm/00_tests.sh` | cpu | unit tests, including the comparison with Kobayashi et al.'s implementation |
 | 2 | `sbatch -A <project> slurm/01_extract_wiki.sh` | gpu | Experiment A: attention + norms on the 1000 Wikipedia segments, reproduction check against the released maps, JS distances between heads |
 | 3 | `sbatch -A <project> slurm/02_extract_syntax.sh` | gpu | Experiments B and C: word-level maps for EWT train/dev and PUD, plus the random-initialization control |
-| 4 | `sbatch -A <project> slurm/03_notebooks.sh all` | cpu | runs the notebooks headless (`general`, `ewt`, `pud` or `all`); the executed notebooks with figures go to `$RESULTS` |
+| 4 | `sbatch -A <project> slurm/03_notebooks.sh all` | cpu | runs the notebooks headless (`general`, `ewt`, `pud`, `ewt-ext`, `pud-ext` or `all`); the executed notebooks with figures go to `$RESULTS` |
 
 Logs are written to `logs/<job-name>_<jobid>.out` and `.err`. Check the queue with `squeue -u $USER`.
 

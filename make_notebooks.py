@@ -1,4 +1,5 @@
-"""Generates Norm_General_Analysis.ipynb and Norm_Syntax_Analysis.ipynb
+"""Generates Norm_General_Analysis.ipynb, Norm_Syntax_Analysis.ipynb and
+Norm_Syntax_Extended.ipynb
 (Python 3 versions of the paper's notebooks that compare attention weights
 with the norm-based maps of Kobayashi et al., 2020).
 
@@ -385,9 +386,150 @@ else:
 ]
 
 
+EXTENDED = [
+    """md:# Dependency Syntax: Extended Analyses (α vs. ‖αf(x)‖)
+
+Follow-up to `Norm_Syntax_Analysis.ipynb`, on the same word-level data
+(`$ATTN_DATA_DIR/dev_norms.pkl`, `train_norms.pkl`, optional
+`dev_random_norms.pkl`, `train_random_norms.pkl`, `glove/`):
+
+1. **Held-out head selection + paired significance.** The best head per
+   relation is selected on one half of the sentences and scored on the other
+   (2-fold cross-fitting, so every token is scored by a head not selected on
+   it). α and ‖αf‖ are compared on the same tokens with an exact McNemar test,
+   a sentence-level bootstrap CI of the difference, and Holm correction over
+   relations.
+2. **Sink ablation.** The per-head evaluation already ignores [CLS]/[SEP]; here
+   punctuation is also removed from the candidate heads. If the gain of
+   ‖αf‖ over α disappears once punctuation is removed from α, the norm-based
+   gain is explained by discounting punctuation sinks, not by other information
+   in ‖f(x)‖.
+3. **Tree decoding from single heads** (R1 in the proposal): directed maximum
+   spanning trees (Chu-Liu-Edmonds, gold root given, both directions) and
+   undirected maximum spanning trees, on raw and row-renormalized maps (the
+   MST objective, unlike the argmax, depends on row scale). Baselines:
+   right-branching UAS and adjacent-chain UUAS.
+4. **GloVe probe** with row-normalized norms and with both root alignments.
+5. **Random-initialization control for the attention-only probe.**""",
+    """import collections
+import os
+
+import numpy as np
+import torch
+
+import analysis_utils as au
+import syntax_extended as se
+import utils
+
+DATA_DIR = os.environ.get("ATTN_DATA_DIR", "./data")
+dev_data = utils.load_pickle(os.path.join(DATA_DIR, "dev_norms.pkl"))
+RANDOM_DEV_FILE = os.path.join(DATA_DIR, "dev_random_norms.pkl")
+TRAIN_FILE = os.path.join(DATA_DIR, "train_norms.pkl")
+TRAIN_RANDOM_FILE = os.path.join(DATA_DIR, "train_random_norms.pkl")
+GLOVE_DIR = os.path.join(DATA_DIR, "glove")
+
+reln_counts = collections.Counter(r for e in dev_data for r in e["relns"])
+RELNS = ["all"] + [r for r, c in reln_counts.most_common()
+                   if c >= 100 and r not in ("punct", "root")]
+print(len(dev_data), "sentences;", len(RELNS) - 1, "relations with >= 100 tokens")
+print("punctuation words:", sum(se.is_punct(w) for e in dev_data for w in e["words"]))""",
+    """md:## 1–2. Held-out best heads, significance, and sink ablation""",
+    """VARIANTS = {"attns": ("attns", False), "attns -punct": ("attns", True),
+            "norms": ("norms", False), "norms -punct": ("norms", True)}
+cf = {name: se.cross_fit_correctness(dev_data, key, RELNS, exclude_punct=ep)
+      for name, (key, ep) in VARIANTS.items()}
+if os.path.exists(RANDOM_DEV_FILE):
+  random_dev_data = utils.load_pickle(RANDOM_DEV_FILE)
+  cf["attns (random)"] = se.cross_fit_correctness(random_dev_data, "attns", RELNS)
+  cf["norms (random)"] = se.cross_fit_correctness(random_dev_data, "norms", RELNS)
+
+print("held-out accuracy (%)")
+print("{:12s}".format("reln") + "".join("{:>16s}".format(v) for v in cf))
+for r in RELNS:
+  if r in cf["attns"]:
+    print("{:12s}".format(r[:12]) + "".join(
+        "{:16.1f}".format(100 * cf[v][r][0].mean()) for v in cf if r in cf[v]))""",
+    """md:**Does ‖αf‖ beat α?** (positive diff = norms better; `*` = Holm-adjusted p < 0.05)""",
+    """_ = se.compare_maps(cf["attns"], cf["norms"], "attns", "norms")""",
+    """md:**Sink ablation.** First: how much does removing punctuation candidates help α?
+Second, the key comparison: ‖αf‖ vs α *without punctuation*. If this difference is
+~0, the norm gain is the punctuation effect.""",
+    """_ = se.compare_maps(cf["attns"], cf["attns -punct"], "attns", "a-punct")""",
+    """_ = se.compare_maps(cf["attns -punct"], cf["norms"], "a-punct", "norms")""",
+    """_ = se.compare_maps(cf["attns -punct"], cf["norms -punct"], "a-punct", "n-punct")""",
+    """# heads selected in each fold (direction index: 0 = dep->head, 1 = head<-dep;
+# layer and head 0-indexed)
+for r in RELNS[:12]:
+  print("{:12s} attns {}   norms {}".format(r[:12], cf["attns"][r][2], cf["norms"][r][2]))""",
+    """md:## 3. Tree decoding from single heads
+Every head is decoded on every sentence (≈1 s per head and variant per 1000
+sentences). *In-sample* = best head selected and scored on all data (as in most
+prior work); *held-out* = 2-fold cross-fitting. UAS/UUAS exclude punctuation;
+the gold root is given for the directed trees.""",
+    """print({k: round(100 * v, 1) for k, v in se.tree_baselines(dev_data).items()})
+
+tree_variants = [("attns", False), ("attns", True), ("norms", False), ("norms", True)]
+tree_results = {}
+for key, renorm in tree_variants:
+  name = key + (" renorm" if renorm else " raw")
+  tree_results[name] = se.tree_table(se.tree_counts_all_heads(dev_data, key, renorm))
+if os.path.exists(RANDOM_DEV_FILE):
+  for key in ["attns", "norms"]:
+    tree_results[key + " renorm (random)"] = se.tree_table(
+        se.tree_counts_all_heads(random_dev_data, key, True))
+
+print("{:24s}".format("") + "".join("{:>28s}".format(m) for m in se.TREE_METRICS))
+print("{:24s}".format("") + "".join("{:>28s}".format("in-sample (head) | held-out")
+                                    for m in se.TREE_METRICS))
+for name, rows in tree_results.items():
+  line = "{:24s}".format(name)
+  for m in se.TREE_METRICS:
+    score, (l, h), held = rows[m]
+    line += "{:>28s}".format("{:.1f} ({}-{}) | {:.1f}".format(100 * score, l, h, 100 * held))
+  print(line)""",
+    """md:## 4. GloVe probes
+`attn_and_words` with α and with row-normalized ‖αf‖, each with the original
+root alignment (as in the paper's code) and with `fix_root_alignment=True`.""",
+    """if os.path.exists(os.path.join(GLOVE_DIR, "embeddings.pkl")):
+  train_data = utils.load_pickle(TRAIN_FILE)
+  embeddings = au.WordEmbeddings(os.path.join(GLOVE_DIR, "embeddings.pkl"),
+                                 os.path.join(GLOVE_DIR, "vocab.pkl"))
+  for key, normalize in [("attns", False), ("norms", True)]:
+    for fix in [False, True]:
+      torch.manual_seed(0)
+      print("{} normalize={} fix_root_alignment={}".format(key, normalize, fix))
+      au.run_training(au.attn_and_words(embeddings, fix_root_alignment=fix),
+                      train_data, dev_data, key=key, normalize=normalize,
+                      log_every=0)
+  torch.manual_seed(0)
+  print("words-and-distances, fix_root_alignment=True")
+  au.run_training(au.words_and_distances(embeddings, fix_root_alignment=True),
+                  train_data, dev_data, log_every=0)
+else:
+  print("no GloVe data found in", GLOVE_DIR)""",
+    """md:## 5. Random-initialization control for the attention-only probe
+Needs `train_random_norms.pkl` and `dev_random_norms.pkl` (same architecture,
+random weights; see `slurm/02_extract_syntax.sh`).""",
+    """if os.path.exists(TRAIN_RANDOM_FILE) and os.path.exists(RANDOM_DEV_FILE):
+  train_random = utils.load_pickle(TRAIN_RANDOM_FILE)
+  for key, normalize in [("attns", False), ("norms", True)]:
+    uas = []
+    for seed in [0, 1, 2]:
+      torch.manual_seed(seed)
+      uas.append(au.run_training(au.attn_linear_combo(), train_random,
+                                 random_dev_data, key=key, normalize=normalize,
+                                 log_every=0))
+    print("random-init {:6s} normalize={}: UAS {:.1f} +- {:.1f}".format(
+        key, normalize, 100 * np.mean(uas), 100 * np.std(uas)))
+else:
+  print("random-init train/dev maps not found")""",
+]
+
+
 def main():
   nbformat.write(notebook(GENERAL), "Norm_General_Analysis.ipynb")
   nbformat.write(notebook(SYNTAX), "Norm_Syntax_Analysis.ipynb")
+  nbformat.write(notebook(EXTENDED), "Norm_Syntax_Extended.ipynb")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs the analysis notebooks headless; executed copies (with figures) go to $RESULTS.
-# Usage: sbatch -A <project> slurm/03_notebooks.sh [general|ewt|pud|all]
+# Usage: sbatch -A <project> slurm/03_notebooks.sh [general|ewt|pud|ewt-ext|pud-ext|all]
 #SBATCH --job-name=notebooks
 #SBATCH --partition=cpu
 #SBATCH --cpus-per-task=8
@@ -25,4 +25,10 @@ if [ $WHAT = ewt ] || [ $WHAT = all ]; then
 fi
 if [ $WHAT = pud ] || [ $WHAT = all ]; then
   run Norm_Syntax_Analysis.ipynb $DATA/pud syntax_pud.ipynb
+fi
+if [ $WHAT = ewt-ext ] || [ $WHAT = all ]; then
+  run Norm_Syntax_Extended.ipynb $DATA/ewt syntax_extended_ewt.ipynb
+fi
+if [ $WHAT = pud-ext ] || [ $WHAT = all ]; then
+  run Norm_Syntax_Extended.ipynb $DATA/pud syntax_extended_pud.ipynb
 fi
