@@ -104,8 +104,11 @@ for col, (name, _, _) in enumerate(MAPS):
   for key, color, label in [("rest_sep", BLUE, "other -> [SEP]"),
                             ("sep_sep", GREEN, "[SEP] -> [SEP]")]:
     add_line(stats, key, axes[1, col], color, label)
-  for key, color, label in [("left", RED, "next token"),
-                            ("right", BLUE, "prev token"),
+  # "right" = attention from token i to i+1 (np.eye(n, n, 1)). NOTE: the
+  # original notebook labels "left" as "next token" and "right" as "prev
+  # token", which contradicts its own clustering code and the selectors.
+  for key, color, label in [("right", RED, "next token"),
+                            ("left", BLUE, "prev token"),
                             ("self", PURPLE, "current token")]:
     add_line(stats, key, axes[2, col], color, label, plot_avgs=False)
   axes[0, col].set_title(name)
