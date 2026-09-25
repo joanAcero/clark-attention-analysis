@@ -74,7 +74,7 @@ def main():
 
   print("Computing head distances")
   js_distances = None
-  for doc in utils.logged_loop(data, n_steps=None):
+  for doc in utils.logged_loop(data):
     if args.key not in doc:
       continue
     attns = np.array(doc[args.key])
