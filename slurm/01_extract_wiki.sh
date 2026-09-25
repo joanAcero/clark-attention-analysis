@@ -12,6 +12,14 @@
 set -euo pipefail
 source "$SLURM_SUBMIT_DIR/slurm/config.sh"
 
+for f in $DATA/clark/unlabeled_attn.pkl $DATA/wiki/unlabeled.json; do
+  if [ ! -f $f ]; then
+    echo "ERROR: $f not found. Download Clark et al.'s data into $DATA/clark/ and rerun" \
+         "'bash slurm/prepare_data.sh' (see slurm/README.md)." >&2
+    exit 1
+  fi
+done
+
 SEGMENT_IDS=${SEGMENT_IDS:-zeros}   # override with: sbatch --export=ALL,SEGMENT_IDS=pair ...
 W=$DATA/wiki
 python extract_norms.py --preprocessed-data-file $W/unlabeled.json --bert-dir $BERT \
