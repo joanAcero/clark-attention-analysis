@@ -7,6 +7,8 @@ norm-based maps ‖α f(x)‖ of
 [Attention is Not Only a Weight](https://www.aclweb.org/anthology/2020.emnlp-main.574/) (Kobayashi et al., 2020).
 All commands are run from the repository root. `$DATA` is a directory of your choice.
 
+On a Slurm cluster, the same steps are packaged as batch scripts in [`slurm/`](slurm/README.md).
+
 | Experiment | Paper section | Data | Output |
 | --- | --- | --- | --- |
 | A. General behaviour of heads | Clark §3, §6; Kobayashi §4 | Clark's 1000 Wikipedia segments | `Norm_General_Analysis.ipynb` |
